@@ -3,20 +3,24 @@ package com.studentmanagement.ui;
 import com.studentmanagement.dao.StudentDAO;
 import com.studentmanagement.model.Student;
 import javax.swing.*;
-import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Map;
+import java.io.File;
 
 public class MainForm extends JFrame {
     private StudentDAO studentDAO;
     private StudentTableModel tableModel;
     private JTable studentTable;
     private JTextField txtSearch;
-    private JButton btnAdd, btnEdit, btnDelete, btnRefresh, btnExport;
+    private JComboBox<String> cmbSortBy;
+    private JButton btnAdd, btnEdit, btnDelete, btnRefresh, btnExport, btnImport, 
+                    btnStatistics, btnBackup, btnRestore, btnAdvancedSearch;
     private JLabel lblTotal;
     
     public MainForm() {
@@ -47,12 +51,24 @@ public class MainForm extends JFrame {
         txtSearch = new JTextField(20);
         txtSearch.setToolTipText("Tìm kiếm theo mã SV, tên, lớp hoặc ngành");
         
+        // Sort combo box
+        cmbSortBy = new JComboBox<>(new String[]{
+            "Không sắp xếp", "Mã SV (A→Z)", "Mã SV (Z→A)", 
+            "Tên (A→Z)", "Tên (Z→A)", "GPA (Cao→Thấp)", "GPA (Thấp→Cao)",
+            "Lớp (A→Z)", "Ngành (A→Z)"
+        });
+        
         // Buttons
         btnAdd = new JButton("Thêm");
         btnEdit = new JButton("Sửa");
         btnDelete = new JButton("Xóa");
         btnRefresh = new JButton("Làm mới");
-        btnExport = new JButton("Xuất Excel");
+        btnExport = new JButton("Xuất CSV");
+        btnImport = new JButton("Nhập CSV");
+        btnStatistics = new JButton("Thống kê");
+        btnBackup = new JButton("Sao lưu");
+        btnRestore = new JButton("Khôi phục");
+        btnAdvancedSearch = new JButton("Tìm kiếm nâng cao");
         
         // Status label
         lblTotal = new JLabel("Tổng số sinh viên: 0");
@@ -68,17 +84,32 @@ public class MainForm extends JFrame {
         JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         searchPanel.add(new JLabel("Tìm kiếm:"));
         searchPanel.add(txtSearch);
+        searchPanel.add(new JLabel("Sắp xếp:"));
+        searchPanel.add(cmbSortBy);
+        searchPanel.add(btnAdvancedSearch);
         
-        // Button panel
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        buttonPanel.add(btnAdd);
-        buttonPanel.add(btnEdit);
-        buttonPanel.add(btnDelete);
-        buttonPanel.add(btnRefresh);
-        buttonPanel.add(btnExport);
+        // Button panel 1
+        JPanel buttonPanel1 = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttonPanel1.add(btnAdd);
+        buttonPanel1.add(btnEdit);
+        buttonPanel1.add(btnDelete);
+        buttonPanel1.add(btnRefresh);
+        
+        // Button panel 2  
+        JPanel buttonPanel2 = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttonPanel2.add(btnImport);
+        buttonPanel2.add(btnExport);
+        buttonPanel2.add(btnStatistics);
+        buttonPanel2.add(btnBackup);
+        buttonPanel2.add(btnRestore);
+        
+        // Combine button panels
+        JPanel buttonContainer = new JPanel(new BorderLayout());
+        buttonContainer.add(buttonPanel1, BorderLayout.NORTH);
+        buttonContainer.add(buttonPanel2, BorderLayout.SOUTH);
         
         topPanel.add(searchPanel, BorderLayout.WEST);
-        topPanel.add(buttonPanel, BorderLayout.EAST);
+        topPanel.add(buttonContainer, BorderLayout.EAST);
         
         // Center panel - Table
         JScrollPane scrollPane = new JScrollPane(studentTable);
@@ -99,6 +130,14 @@ public class MainForm extends JFrame {
             @Override
             public void actionPerformed(ActionEvent e) {
                 performSearch();
+            }
+        });
+        
+        // Sort combo box event
+        cmbSortBy.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                applySorting();
             }
         });
         
@@ -134,7 +173,42 @@ public class MainForm extends JFrame {
         btnExport.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                exportToExcel();
+                exportToCSV();
+            }
+        });
+        
+        btnImport.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                importFromCSV();
+            }
+        });
+        
+        btnStatistics.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                showStatistics();
+            }
+        });
+        
+        btnBackup.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                backupData();
+            }
+        });
+        
+        btnRestore.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                restoreData();
+            }
+        });
+        
+        btnAdvancedSearch.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                showAdvancedSearch();
             }
         });
         
@@ -154,6 +228,43 @@ public class MainForm extends JFrame {
             btnEdit.setEnabled(hasSelection);
             btnDelete.setEnabled(hasSelection);
         });
+    }
+    
+    private void applySorting() {
+        List<Student> students = new ArrayList<>(tableModel.getStudents());
+        String sortOption = (String) cmbSortBy.getSelectedItem();
+        
+        switch (sortOption) {
+            case "Mã SV (A→Z)":
+                students.sort((s1, s2) -> s1.getStudentId().compareToIgnoreCase(s2.getStudentId()));
+                break;
+            case "Mã SV (Z→A)":
+                students.sort((s1, s2) -> s2.getStudentId().compareToIgnoreCase(s1.getStudentId()));
+                break;
+            case "Tên (A→Z)":
+                students.sort((s1, s2) -> s1.getFullName().compareToIgnoreCase(s2.getFullName()));
+                break;
+            case "Tên (Z→A)":
+                students.sort((s1, s2) -> s2.getFullName().compareToIgnoreCase(s1.getFullName()));
+                break;
+            case "GPA (Cao→Thấp)":
+                students.sort((s1, s2) -> Double.compare(s2.getGpa(), s1.getGpa()));
+                break;
+            case "GPA (Thấp→Cao)":
+                students.sort((s1, s2) -> Double.compare(s1.getGpa(), s2.getGpa()));
+                break;
+            case "Lớp (A→Z)":
+                students.sort((s1, s2) -> s1.getClassName().compareToIgnoreCase(s2.getClassName()));
+                break;
+            case "Ngành (A→Z)":
+                students.sort((s1, s2) -> s1.getMajor().compareToIgnoreCase(s2.getMajor()));
+                break;
+            default:
+                // No sorting
+                break;
+        }
+        
+        tableModel.setStudents(students);
     }
     
     private void addStudent() {
@@ -248,6 +359,7 @@ public class MainForm extends JFrame {
     
     private void refreshTable() {
         txtSearch.setText("");
+        cmbSortBy.setSelectedIndex(0);
         List<Student> students = studentDAO.getAllStudents();
         tableModel.setStudents(students);
         updateStatusLabel(students.size());
@@ -257,53 +369,188 @@ public class MainForm extends JFrame {
         lblTotal.setText("Tổng số sinh viên: " + count);
     }
     
-    private void exportToExcel() {
-        // Simple CSV export implementation
+    private void exportToCSV() {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Xuất danh sách sinh viên");
         fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        fileChooser.setSelectedFile(new File("students.csv"));
         
         if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-            try {
-                String fileName = fileChooser.getSelectedFile().getAbsolutePath();
-                if (!fileName.toLowerCase().endsWith(".csv")) {
-                    fileName += ".csv";
-                }
-                
-                java.io.FileWriter writer = new java.io.FileWriter(fileName);
-                
-                // Write header
-                writer.write("Mã SV,Họ và tên,Ngày sinh,Giới tính,Địa chỉ,Điện thoại,Email,Lớp,Ngành,GPA,Xếp loại\n");
-                
-                // Write data
-                List<Student> students = studentDAO.getAllStudents();
-                for (Student student : students) {
-                    writer.write(String.format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%.2f,%s\n",
-                        student.getStudentId(),
-                        student.getFullName(),
-                        student.getBirthDateString(),
-                        student.getGender(),
-                        student.getAddress(),
-                        student.getPhone(),
-                        student.getEmail(),
-                        student.getClassName(),
-                        student.getMajor(),
-                        student.getGpa(),
-                        student.getAcademyRank()
-                    ));
-                }
-                
-                writer.close();
+            String fileName = fileChooser.getSelectedFile().getAbsolutePath();
+            if (!fileName.toLowerCase().endsWith(".csv")) {
+                fileName += ".csv";
+            }
+            
+            List<Student> students = studentDAO.findAll();
+            if (studentDAO.exportToCSV(fileName, students)) {
                 JOptionPane.showMessageDialog(this, 
-                    "Xuất file thành công: " + fileName, 
+                    "Xuất file CSV thành công!\nĐường dẫn: " + fileName, 
+                    "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, 
+                    "Lỗi khi xuất file CSV!", 
+                    "Lỗi", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+    
+    private void importFromCSV() {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Chọn file CSV để nhập dữ liệu");
+        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("CSV Files", "csv"));
+        
+        if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            String filePath = fileChooser.getSelectedFile().getAbsolutePath();
+            
+            try {
+                int importedCount = studentDAO.importFromCSV(filePath);
+                refreshTable();
+                
+                JOptionPane.showMessageDialog(this, 
+                    "Nhập dữ liệu thành công!\nSố sinh viên được nhập: " + importedCount, 
                     "Thông báo", JOptionPane.INFORMATION_MESSAGE);
                     
             } catch (Exception e) {
                 JOptionPane.showMessageDialog(this, 
-                    "Lỗi khi xuất file: " + e.getMessage(), 
+                    "Lỗi khi nhập file CSV: " + e.getMessage(), 
                     "Lỗi", JOptionPane.ERROR_MESSAGE);
             }
         }
+    }
+    
+    private void showStatistics() {
+        Map<String, Object> stats = studentDAO.getAcademicStatistics();
+        
+        StringBuilder statsText = new StringBuilder();
+        statsText.append("=== THỐNG KÊ SINH VIÊN ===\n\n");
+        
+        // Total statistics
+        statsText.append("Tổng số sinh viên: ").append(stats.get("total")).append("\n\n");
+        
+        // Gender statistics
+        @SuppressWarnings("unchecked")
+        Map<String, Long> genderStats = (Map<String, Long>) stats.get("genderStats");
+        statsText.append("=== Thống kê theo giới tính ===\n");
+        for (Map.Entry<String, Long> entry : genderStats.entrySet()) {
+            statsText.append(entry.getKey()).append(": ").append(entry.getValue()).append(" sinh viên\n");
+        }
+        
+        // Academic rank statistics
+        @SuppressWarnings("unchecked")
+        Map<String, Long> rankStats = (Map<String, Long>) stats.get("rankStats");
+        statsText.append("\n=== Thống kê theo xếp loại ===\n");
+        for (Map.Entry<String, Long> entry : rankStats.entrySet()) {
+            statsText.append(entry.getKey()).append(": ").append(entry.getValue()).append(" sinh viên\n");
+        }
+        
+        // GPA statistics
+        statsText.append("\n=== Thống kê điểm GPA ===\n");
+        statsText.append(String.format("Điểm trung bình: %.2f\n", (Double) stats.get("averageGpa")));
+        statsText.append(String.format("Điểm cao nhất: %.2f\n", (Double) stats.get("maxGpa")));
+        statsText.append(String.format("Điểm thấp nhất: %.2f\n", (Double) stats.get("minGpa")));
+        
+        // Top 5 students
+        List<Student> topStudents = studentDAO.findTopStudentsByGpa(5);
+        statsText.append("\n=== Top 5 sinh viên xuất sắc ===\n");
+        for (int i = 0; i < topStudents.size(); i++) {
+            Student s = topStudents.get(i);
+            statsText.append(String.format("%d. %s - %s - GPA: %.2f\n", 
+                i + 1, s.getStudentId(), s.getFullName(), s.getGpa()));
+        }
+        
+        // Class statistics
+        @SuppressWarnings("unchecked")
+        Map<String, Long> classStats = (Map<String, Long>) stats.get("classStats");
+        statsText.append("\n=== Thống kê theo lớp ===\n");
+        classStats.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .forEach(entry -> statsText.append(entry.getKey()).append(": ").append(entry.getValue()).append(" sinh viên\n"));
+        
+        // Show statistics in dialog
+        JTextArea textArea = new JTextArea(statsText.toString());
+        textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        textArea.setEditable(false);
+        
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(600, 500));
+        
+        JOptionPane.showMessageDialog(this, scrollPane, "Thống kê sinh viên", JOptionPane.INFORMATION_MESSAGE);
+    }
+    
+    private void backupData() {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Chọn vị trí sao lưu dữ liệu");
+        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        fileChooser.setSelectedFile(new File("students_backup_" + 
+            java.time.LocalDate.now().toString() + ".dat"));
+        
+        if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            String backupPath = fileChooser.getSelectedFile().getAbsolutePath();
+            
+            if (studentDAO.backupData(backupPath)) {
+                JOptionPane.showMessageDialog(this, 
+                    "Sao lưu dữ liệu thành công!\nĐường dẫn: " + backupPath, 
+                    "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, 
+                    "Lỗi khi sao lưu dữ liệu!", 
+                    "Lỗi", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+    
+    private void restoreData() {
+        int confirm = JOptionPane.showConfirmDialog(this, 
+            "Khôi phục dữ liệu sẽ thay thế toàn bộ dữ liệu hiện tại.\nBạn có chắc chắn muốn tiếp tục?", 
+            "Xác nhận khôi phục", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            
+        if (confirm == JOptionPane.YES_OPTION) {
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setDialogTitle("Chọn file sao lưu để khôi phục");
+            fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+            fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Backup Files", "dat"));
+            
+            if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                String backupPath = fileChooser.getSelectedFile().getAbsolutePath();
+                
+                if (studentDAO.restoreData(backupPath)) {
+                    refreshTable();
+                    JOptionPane.showMessageDialog(this, 
+                        "Khôi phục dữ liệu thành công!", 
+                        "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+                } else {
+                    JOptionPane.showMessageDialog(this, 
+                        "Lỗi khi khôi phục dữ liệu!", 
+                        "Lỗi", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        }
+    }
+    
+    private void showAdvancedSearch() {
+        AdvancedSearchDialog dialog = new AdvancedSearchDialog(this, studentDAO);
+        dialog.setVisible(true);
+        
+        if (dialog.getSearchResult() != null) {
+            List<Student> results = dialog.getSearchResult();
+            tableModel.setStudents(results);
+            updateStatusLabel(results.size());
+            txtSearch.setText("[Tìm kiếm nâng cao] " + results.size() + " kết quả");
+        }
+    }
+    
+    public StudentTableModel getTableModel() {
+        return tableModel;
+    }
+    
+    public List<Student> getStudents() {
+        return tableModel.getStudents();
+    }
+    
+    public void setStudents(List<Student> students) {
+        tableModel.setStudents(students);
+        updateStatusLabel(students.size());
     }
     
     public static void main(String[] args) {
