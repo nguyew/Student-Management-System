@@ -2,7 +2,7 @@ package com.studentmanagement.ui;
 
 import com.studentmanagement.dao.StudentDAO;
 import com.studentmanagement.model.Student;
-import javax.swing.*;
+
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -12,6 +12,11 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
 import java.io.File;
+import java.text.DecimalFormat;
+
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.SwingConstants;
 
 public class MainForm extends JFrame {
     private StudentDAO studentDAO;
@@ -46,6 +51,21 @@ public class MainForm extends JFrame {
         // Configure table appearance
         studentTable.setRowHeight(25);
         studentTable.getTableHeader().setReorderingAllowed(false);
+        studentTable.getColumnModel().getColumn(6).setCellRenderer(new DefaultTableCellRenderer() {
+        private final DecimalFormat df = new DecimalFormat("0.00");
+        
+        @Override
+        public void setValue(Object value) {
+            if (value instanceof Double) {
+                setText(df.format(value));
+            } else if (value instanceof Number) {
+                setText(df.format(((Number) value).doubleValue()));
+            } else {
+                setText(value != null ? value.toString() : "");
+            }
+            setHorizontalAlignment(SwingConstants.RIGHT); // Căn phải cho số
+        }
+    });
         
         // Search components
         txtSearch = new JTextField(20);

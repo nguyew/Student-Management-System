@@ -192,63 +192,126 @@ public class StudentDAO implements StudentRepository {
     public int importFromCSV(String filePath) throws Exception {
         int importedCount = 0;
         List<Student> newStudents = new ArrayList<>();
-        
+
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
             String line;
             boolean isFirstLine = true;
-            
+
             while ((line = reader.readLine()) != null) {
                 if (isFirstLine) {
                     isFirstLine = false;
                     continue; // Skip header
                 }
-                
-                String[] data = line.split(",");
-                if (data.length >= 9) { // Minimum required fields
-                    try {
+
+                try {
+                    // Parse CSV line và xử lý địa chỉ có nhiều comma
+                    String[] rawData = line.split(",");
+
+                    // System.out.println("Parsed " + rawData.length + " raw columns");
+
+                    if (rawData.length >= 11) {
+                        // Reconstruct proper data array
+                        String[] data = new String[11];
+
+                        // Các field đầu (0-3) giữ nguyên
+                        data[0] = rawData[0].trim(); // Mã SV
+                        data[1] = rawData[1].trim(); // Tên
+                        data[2] = rawData[2].trim(); // Ngày sinh  
+                        data[3] = rawData[3].trim(); // Giới tính
+
+                        // Ghép lại địa chỉ từ index 4 đến trước phone
+                        // Phone thường bắt đầu bằng 0 và có 10-11 số
+                        int phoneIndex = findPhoneIndex(rawData);
+                        if (phoneIndex == -1) {
+                            System.err.println("Cannot find phone number in row: " + line);
+                            continue;
+                        }
+
+                        // Ghép địa chỉ từ index 4 đến phoneIndex-1
+                        StringBuilder address = new StringBuilder();
+                        for (int i = 4; i < phoneIndex; i++) {
+                            if (address.length() > 0) address.append(", ");
+                            address.append(rawData[i].trim());
+                        }
+                        data[4] = address.toString(); // Địa chỉ
+
+                        // Các field cuối
+                        data[5] = rawData[phoneIndex].trim();     // Phone
+                        data[6] = rawData[phoneIndex + 1].trim(); // Email
+                        data[7] = rawData[phoneIndex + 2].trim(); // Lớp
+                        data[8] = rawData[phoneIndex + 3].trim(); // Ngành
+                        data[9] = rawData[phoneIndex + 4].trim(); // GPA
+                        data[10] = rawData[phoneIndex + 5].trim(); // Xếp loại
+
+                        // Debug: in ra data đã được reconstruct
+                        // System.out.println("Reconstructed data:");
+                        //for (int i = 0; i < data.length; i++) {
+                          //  System.out.println("  [" + i + "] " + data[i]);
+                        //}
+
+                        // Tạo Student object
                         Student student = new Student();
-                        student.setStudentId(data[0].trim());
-                        student.setFullName(data[1].trim());
-                        
+                        student.setStudentId(data[0]);
+                        student.setFullName(data[1]);
+
                         // Parse birth date
-                        if (!data[2].trim().isEmpty()) {
-                            student.setBirthDate(LocalDate.parse(data[2].trim(), 
+                        if (!data[2].isEmpty()) {
+                            student.setBirthDate(LocalDate.parse(data[2], 
                                 DateTimeFormatter.ofPattern("dd/MM/yyyy")));
                         }
-                        
-                        student.setGender(data[3].trim());
-                        student.setAddress(data[4].trim());
-                        student.setPhone(data[5].trim());
-                        student.setEmail(data[6].trim());
-                        student.setClassName(data[7].trim());
-                        student.setMajor(data[8].trim());
-                        
+
+                        student.setGender(data[3]);
+                        student.setAddress(data[4]);
+                        student.setPhone(data[5]);
+                        student.setEmail(data[6]);
+                        student.setClassName(data[7]);
+                        student.setMajor(data[8]);
+
                         // Parse GPA
-                        if (data.length > 9 && !data[9].trim().isEmpty()) {
-                            student.setGpa(Double.parseDouble(data[9].trim()));
+                        if (!data[9].isEmpty()) {
+                            try {
+                                double gpa = Double.parseDouble(data[9]);
+                                student.setGpa(gpa);
+                            } catch (NumberFormatException e) {
+                                System.err.println("Invalid GPA: " + data[9]);
+                                student.setGpa(0.0);
+                            }
                         } else {
                             student.setGpa(0.0);
                         }
-                        
+
                         // Check if student already exists
                         if (!existsById(student.getStudentId())) {
                             newStudents.add(student);
                             importedCount++;
                         }
-                        
-                    } catch (Exception e) {
-                        // Skip invalid rows
-                        System.err.println("Error parsing row: " + line + " - " + e.getMessage());
+
+                    } else {
+                        System.err.println("Not enough columns in row: " + line);
                     }
+
+                } catch (Exception e) {
+                    System.err.println("Error parsing row: " + line + " - " + e.getMessage());
+                    e.printStackTrace();
                 }
             }
         }
-        
-        // Add all valid students
+
         students.addAll(newStudents);
         saveData();
-        
+
         return importedCount;
+    }
+    
+    private int findPhoneIndex(String[] data) {
+        for (int i = 4; i < data.length; i++) {
+            String field = data[i].trim();
+            // Phone number thường bắt đầu bằng 0 và có 10-11 chữ số
+            if (field.matches("0\\d{9,10}")) {
+                return i;
+            }
+        }
+        return -1;
     }
     
     public boolean exportToCSV(String filePath, List<Student> studentsToExport) {

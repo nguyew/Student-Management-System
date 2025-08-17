@@ -46,7 +46,7 @@ public class StudentTableModel extends AbstractTableModel {
             case 3: return student.getGender();
             case 4: return student.getClassName();
             case 5: return student.getMajor();
-            case 6: return String.format("%.2f", student.getGpa());
+            case 6: return student.getGpa(); // FIX: Trả về Double thay vì String
             case 7: return student.getAcademyRank();
             case 8: return student.getAddress();
             case 9: return student.getPhone();
@@ -57,9 +57,14 @@ public class StudentTableModel extends AbstractTableModel {
     @Override
     public Class<?> getColumnClass(int columnIndex) {
         switch (columnIndex) {
-            case 6: return Double.class; // GPA for sorting
+            case 6: return Double.class; // GPA column
             default: return String.class;
         }
+    }
+    
+    @Override
+    public boolean isCellEditable(int rowIndex, int columnIndex) {
+        return false; // Không cho phép edit trực tiếp trong table
     }
     
     public void setStudents(List<Student> students) {
