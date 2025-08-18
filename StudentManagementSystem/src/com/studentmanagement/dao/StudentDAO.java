@@ -20,14 +20,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-// IO imports
+// IO imports 
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.IOException;
 
 public class StudentDAO implements StudentRepository {
     
-    // ===== CRUD Repository Implementation với Database =====
+    private static final String CSV_HEADER = "Mã SV,Họ và tên,Ngày sinh,Giới tính,Địa chỉ,Điện thoại,Email,Lớp,Ngành,GPA,Xếp loại";
+    
+    // ===== CRUD Repository Implementation =====
     
     @Override
     public boolean save(Student student) {
@@ -125,7 +128,7 @@ public class StudentDAO implements StudentRepository {
     
     @Override
     public boolean update(Student student) {
-        String sql = "UPDATE students SET full_name = ?, birth_date = ?, gender = ?, address = ?, phone = ?, email = ?, class_name = ?, major = ?, gpa = ?, updated_date = GETDATE() WHERE student_id = ?";
+        String sql = "UPDATE students SET full_name = ?, birth_date = ?, gender = ?, address = ?, phone = ?, email = ?, class_name = ?, major = ?, gpa = ? WHERE student_id = ?";
         
         Connection conn = null;
         PreparedStatement pstmt = null;
@@ -235,11 +238,11 @@ public class StudentDAO implements StudentRepository {
         return 0;
     }
     
-    // ===== Student-specific Repository Implementation =====
+    // ===== Enhanced Search Methods =====
     
     @Override
     public List<Student> searchByKeyword(String keyword) {
-        String sql = "SELECT * FROM students WHERE student_id LIKE ? OR full_name LIKE ? OR class_name LIKE ? OR major LIKE ? ORDER BY student_id";
+        String sql = "SELECT * FROM students WHERE student_id LIKE ? OR full_name LIKE ? OR class_name LIKE ? OR major LIKE ? OR address LIKE ? OR phone LIKE ? OR email LIKE ? ORDER BY student_id";
         List<Student> students = new ArrayList<>();
         
         Connection conn = null;
@@ -250,10 +253,9 @@ public class StudentDAO implements StudentRepository {
             conn = DatabaseConnection.getConnection();
             pstmt = conn.prepareStatement(sql);
             String searchPattern = "%" + keyword + "%";
-            pstmt.setString(1, searchPattern);
-            pstmt.setString(2, searchPattern);
-            pstmt.setString(3, searchPattern);
-            pstmt.setString(4, searchPattern);
+            for (int i = 1; i <= 7; i++) {
+                pstmt.setString(i, searchPattern);
+            }
             
             rs = pstmt.executeQuery();
             
@@ -272,35 +274,21 @@ public class StudentDAO implements StudentRepository {
     
     @Override
     public List<Student> findByClassName(String className) {
-        String sql = "SELECT * FROM students WHERE class_name = ? ORDER BY student_id";
-        List<Student> students = new ArrayList<>();
-        
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        
-        try {
-            conn = DatabaseConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, className);
-            rs = pstmt.executeQuery();
-            
-            while (rs.next()) {
-                students.add(mapResultSetToStudent(rs));
-            }
-            
-        } catch (SQLException e) {
-            System.err.println("Error finding students by class: " + e.getMessage());
-        } finally {
-            DatabaseConnection.closeAll(conn, pstmt, rs);
-        }
-        
-        return students;
+        return findByField("class_name", className);
     }
     
     @Override
     public List<Student> findByMajor(String major) {
-        String sql = "SELECT * FROM students WHERE major = ? ORDER BY student_id";
+        return findByField("major", major);
+    }
+    
+    @Override
+    public List<Student> findByGender(String gender) {
+        return findByField("gender", gender);
+    }
+    
+    private List<Student> findByField(String fieldName, String value) {
+        String sql = "SELECT * FROM students WHERE " + fieldName + " = ? ORDER BY student_id";
         List<Student> students = new ArrayList<>();
         
         Connection conn = null;
@@ -310,7 +298,7 @@ public class StudentDAO implements StudentRepository {
         try {
             conn = DatabaseConnection.getConnection();
             pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, major);
+            pstmt.setString(1, value);
             rs = pstmt.executeQuery();
             
             while (rs.next()) {
@@ -318,7 +306,7 @@ public class StudentDAO implements StudentRepository {
             }
             
         } catch (SQLException e) {
-            System.err.println("Error finding students by major: " + e.getMessage());
+            System.err.println("Error finding students by " + fieldName + ": " + e.getMessage());
         } finally {
             DatabaseConnection.closeAll(conn, pstmt, rs);
         }
@@ -356,36 +344,8 @@ public class StudentDAO implements StudentRepository {
     }
     
     @Override
-    public List<Student> findByGender(String gender) {
-        String sql = "SELECT * FROM students WHERE gender = ? ORDER BY student_id";
-        List<Student> students = new ArrayList<>();
-        
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        
-        try {
-            conn = DatabaseConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, gender);
-            rs = pstmt.executeQuery();
-            
-            while (rs.next()) {
-                students.add(mapResultSetToStudent(rs));
-            }
-            
-        } catch (SQLException e) {
-            System.err.println("Error finding students by gender: " + e.getMessage());
-        } finally {
-            DatabaseConnection.closeAll(conn, pstmt, rs);
-        }
-        
-        return students;
-    }
-    
-    @Override
     public List<Student> findTopStudentsByGpa(int limit) {
-        String sql = "SELECT TOP (?) * FROM students ORDER BY gpa DESC";
+        String sql = "SELECT TOP (?) * FROM students WHERE gpa > 0 ORDER BY gpa DESC, student_id ASC";
         List<Student> students = new ArrayList<>();
         
         Connection conn = null;
@@ -410,6 +370,8 @@ public class StudentDAO implements StudentRepository {
         
         return students;
     }
+    
+    // ===== Enhanced Statistics cho SQL Server =====
     
     @Override
     public Map<String, Object> getAcademicStatistics() {
@@ -445,8 +407,24 @@ public class StudentDAO implements StudentRepository {
             rs.close();
             pstmt.close();
             
-            // Thống kê theo xếp loại
-            pstmt = conn.prepareStatement("SELECT CASE WHEN gpa >= 3.6 THEN N'Xuất sắc' WHEN gpa >= 3.2 THEN N'Giỏi' WHEN gpa >= 2.5 THEN N'Khá' WHEN gpa >= 2.0 THEN N'Trung bình' ELSE N'Yếu' END as rank, COUNT(*) as count FROM students GROUP BY CASE WHEN gpa >= 3.6 THEN N'Xuất sắc' WHEN gpa >= 3.2 THEN N'Giỏi' WHEN gpa >= 2.5 THEN N'Khá' WHEN gpa >= 2.0 THEN N'Trung bình' ELSE N'Yếu' END");
+            // Thống kê theo xếp loại - Compatible với SQL Server
+            String rankQuery = "SELECT " +
+                "CASE " +
+                "WHEN gpa >= 3.6 THEN 'Xuất sắc' " +
+                "WHEN gpa >= 3.2 THEN 'Giỏi' " +
+                "WHEN gpa >= 2.5 THEN 'Khá' " +
+                "WHEN gpa >= 2.0 THEN 'Trung bình' " +
+                "ELSE 'Yếu' " +
+                "END as rank, COUNT(*) as count " +
+                "FROM students " +
+                "GROUP BY CASE " +
+                "WHEN gpa >= 3.6 THEN 'Xuất sắc' " +
+                "WHEN gpa >= 3.2 THEN 'Giỏi' " +
+                "WHEN gpa >= 2.5 THEN 'Khá' " +
+                "WHEN gpa >= 2.0 THEN 'Trung bình' " +
+                "ELSE 'Yếu' END";
+                
+            pstmt = conn.prepareStatement(rankQuery);
             rs = pstmt.executeQuery();
             Map<String, Long> rankStats = new HashMap<>();
             while (rs.next()) {
@@ -487,9 +465,6 @@ public class StudentDAO implements StudentRepository {
     
     // ===== Helper Methods =====
     
-    /**
-     * Map ResultSet to Student object
-     */
     private Student mapResultSetToStudent(ResultSet rs) throws SQLException {
         Student student = new Student();
         student.setStudentId(rs.getString("student_id"));
@@ -511,98 +486,152 @@ public class StudentDAO implements StudentRepository {
         return student;
     }
     
-    // ===== Import/Export Operations =====
+    // ===== Enhanced CSV Import/Export cho NetBeans 8.2 =====
     
-    public int importFromCSV(String filePath) throws Exception {
-        int importedCount = 0;
-        List<Student> newStudents = new ArrayList<>();
-
+    public ImportResult importFromCSV(String filePath) {
+        ImportResult result = new ImportResult();
+        List<String> errors = new ArrayList<>();
+        
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
             String line;
             boolean isFirstLine = true;
+            int lineNumber = 0;
 
             while ((line = reader.readLine()) != null) {
+                lineNumber++;
+                
                 if (isFirstLine) {
                     isFirstLine = false;
                     continue; // Skip header
                 }
 
                 try {
-                    String[] rawData = line.split(",");
-
-                    if (rawData.length >= 11) {
-                        String[] data = new String[11];
-                        data[0] = rawData[0].trim(); // Mã SV
-                        data[1] = rawData[1].trim(); // Tên
-                        data[2] = rawData[2].trim(); // Ngày sinh  
-                        data[3] = rawData[3].trim(); // Giới tính
-
-                        int phoneIndex = findPhoneIndex(rawData);
-                        if (phoneIndex == -1) {
-                            System.err.println("Cannot find phone number in row: " + line);
-                            continue;
-                        }
-
-                        StringBuilder address = new StringBuilder();
-                        for (int i = 4; i < phoneIndex; i++) {
-                            if (address.length() > 0) address.append(", ");
-                            address.append(rawData[i].trim());
-                        }
-                        data[4] = address.toString(); // Địa chỉ
-
-                        data[5] = rawData[phoneIndex].trim();     // Phone
-                        data[6] = rawData[phoneIndex + 1].trim(); // Email
-                        data[7] = rawData[phoneIndex + 2].trim(); // Lớp
-                        data[8] = rawData[phoneIndex + 3].trim(); // Ngành
-                        data[9] = rawData[phoneIndex + 4].trim(); // GPA
-                        data[10] = rawData[phoneIndex + 5].trim(); // Xếp loại
-
-                        Student student = new Student();
-                        student.setStudentId(data[0]);
-                        student.setFullName(data[1]);
-
-                        if (!data[2].isEmpty()) {
-                            student.setBirthDate(LocalDate.parse(data[2], 
-                                DateTimeFormatter.ofPattern("dd/MM/yyyy")));
-                        }
-
-                        student.setGender(data[3]);
-                        student.setAddress(data[4]);
-                        student.setPhone(data[5]);
-                        student.setEmail(data[6]);
-                        student.setClassName(data[7]);
-                        student.setMajor(data[8]);
-
-                        if (!data[9].isEmpty()) {
-                            try {
-                                double gpa = Double.parseDouble(data[9]);
-                                student.setGpa(gpa);
-                            } catch (NumberFormatException e) {
-                                System.err.println("Invalid GPA: " + data[9]);
-                                student.setGpa(0.0);
-                            }
-                        } else {
-                            student.setGpa(0.0);
-                        }
-
+                    Student student = parseCSVLine(line, lineNumber);
+                    if (student != null) {
                         if (!existsById(student.getStudentId())) {
                             if (save(student)) {
-                                importedCount++;
+                                result.successCount++;
+                            } else {
+                                result.failureCount++;
+                                errors.add("Dòng " + lineNumber + ": Lỗi lưu sinh viên " + student.getStudentId());
                             }
+                        } else {
+                            result.duplicateCount++;
+                            errors.add("Dòng " + lineNumber + ": Mã SV " + student.getStudentId() + " đã tồn tại");
                         }
-
                     } else {
-                        System.err.println("Not enough columns in row: " + line);
+                        result.failureCount++;
+                        errors.add("Dòng " + lineNumber + ": Dữ liệu không hợp lệ");
                     }
 
                 } catch (Exception e) {
-                    System.err.println("Error parsing row: " + line + " - " + e.getMessage());
-                    e.printStackTrace();
+                    result.failureCount++;
+                    errors.add("Dòng " + lineNumber + ": " + e.getMessage());
                 }
             }
+            
+            result.errors = errors;
+            
+        } catch (IOException e) {
+            result.failureCount++;
+            errors.add("Lỗi đọc file: " + e.getMessage());
+            result.errors = errors;
         }
 
-        return importedCount;
+        return result;
+    }
+    
+    private Student parseCSVLine(String line, int lineNumber) throws Exception {
+        String[] rawData = line.split(",");
+        
+        if (rawData.length < 10) {
+            throw new Exception("Không đủ cột dữ liệu (cần ít nhất 10 cột)");
+        }
+        
+        Student student = new Student();
+        
+        // Mã sinh viên
+        String studentId = rawData[0].trim();
+        if (studentId.isEmpty()) {
+            throw new Exception("Mã sinh viên không được để trống");
+        }
+        student.setStudentId(studentId);
+        
+        // Họ tên
+        String fullName = rawData[1].trim();
+        if (fullName.isEmpty()) {
+            throw new Exception("Họ tên không được để trống");
+        }
+        student.setFullName(fullName);
+        
+        // Ngày sinh
+        String birthDateStr = rawData[2].trim();
+        if (!birthDateStr.isEmpty()) {
+            try {
+                LocalDate birthDate = LocalDate.parse(birthDateStr, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+                student.setBirthDate(birthDate);
+            } catch (Exception e) {
+                throw new Exception("Ngày sinh không đúng định dạng dd/MM/yyyy");
+            }
+        }
+        
+        // Giới tính
+        String gender = rawData[3].trim();
+        if (!gender.equals("Nam") && !gender.equals("Nữ")) {
+            throw new Exception("Giới tính phải là 'Nam' hoặc 'Nữ'");
+        }
+        student.setGender(gender);
+        
+        // Xử lý địa chỉ (có thể có dấu phẩy)
+        int phoneIndex = findPhoneIndex(rawData);
+        if (phoneIndex == -1) {
+            throw new Exception("Không tìm thấy số điện thoại hợp lệ");
+        }
+        
+        StringBuilder address = new StringBuilder();
+        for (int i = 4; i < phoneIndex; i++) {
+            if (address.length() > 0) address.append(", ");
+            address.append(rawData[i].trim());
+        }
+        student.setAddress(address.toString());
+        
+        // Điện thoại
+        String phone = rawData[phoneIndex].trim();
+        if (!phone.matches("0\\d{9,10}")) {
+            throw new Exception("Số điện thoại không hợp lệ");
+        }
+        student.setPhone(phone);
+        
+        // Email
+        student.setEmail(rawData[phoneIndex + 1].trim());
+        
+        // Lớp
+        String className = rawData[phoneIndex + 2].trim();
+        if (className.isEmpty()) {
+            throw new Exception("Tên lớp không được để trống");
+        }
+        student.setClassName(className);
+        
+        // Ngành
+        student.setMajor(rawData[phoneIndex + 3].trim());
+        
+        // GPA
+        String gpaStr = rawData[phoneIndex + 4].trim();
+        if (!gpaStr.isEmpty()) {
+            try {
+                double gpa = Double.parseDouble(gpaStr);
+                if (gpa < 0.0 || gpa > 4.0) {
+                    throw new Exception("GPA phải từ 0.0 đến 4.0");
+                }
+                student.setGpa(gpa);
+            } catch (NumberFormatException e) {
+                throw new Exception("GPA không đúng định dạng số");
+            }
+        } else {
+            student.setGpa(0.0);
+        }
+        
+        return student;
     }
     
     private int findPhoneIndex(String[] data) {
@@ -615,58 +644,475 @@ public class StudentDAO implements StudentRepository {
         return -1;
     }
     
+    // ===== Enhanced CSV Export =====
+    
     public boolean exportToCSV(String filePath, List<Student> studentsToExport) {
-        try (FileWriter writer = new FileWriter(filePath)) {
-            writer.write("Mã SV,Họ và tên,Ngày sinh,Giới tính,Địa chỉ,Điện thoại,Email,Lớp,Ngành,GPA,Xếp loại\n");
+        try (FileWriter writer = new FileWriter(filePath, false)) { // false = overwrite
+            // Write BOM for UTF-8 (để hiển thị tiếng Việt đúng trong Excel)
+            writer.write('\ufeff');
+            writer.write(CSV_HEADER + "\n");
             
             for (Student student : studentsToExport) {
-                writer.write(String.format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%.2f,%s\n",
-                    student.getStudentId(),
-                    student.getFullName(),
+                String csvLine = String.format("%s,%s,%s,%s,\"%s\",%s,%s,%s,%s,%.2f,%s",
+                    escapeCSVField(student.getStudentId()),
+                    escapeCSVField(student.getFullName()),
                     student.getBirthDateString(),
-                    student.getGender(),
-                    student.getAddress(),
-                    student.getPhone(),
-                    student.getEmail(),
-                    student.getClassName(),
-                    student.getMajor(),
+                    escapeCSVField(student.getGender()),
+                    escapeCSVField(student.getAddress()), // Quoted vì có thể chứa dấu phẩy
+                    escapeCSVField(student.getPhone()),
+                    escapeCSVField(student.getEmail()),
+                    escapeCSVField(student.getClassName()),
+                    escapeCSVField(student.getMajor()),
                     student.getGpa(),
-                    student.getAcademyRank()
-                ));
+                    escapeCSVField(student.getAcademyRank())
+                );
+                writer.write(csvLine + "\n");
             }
             return true;
-        } catch (Exception e) {
+        } catch (IOException e) {
             System.err.println("Error exporting to CSV: " + e.getMessage());
             return false;
         }
     }
     
-    public boolean backupData(String backupPath) {
-        String sql = "BACKUP DATABASE StudentManagementDB TO DISK = ?";
-        
+    private String escapeCSVField(String field) {
+        if (field == null) return "";
+        // Escape quotes và wrap trong quotes nếu có dấu phẩy
+        if (field.contains(",") || field.contains("\"") || field.contains("\n")) {
+            return "\"" + field.replace("\"", "\"\"") + "\"";
+        }
+        return field;
+    }
+    
+    // ===== Batch Operations =====
+    
+    public BatchResult batchInsert(List<Student> students) {
+        BatchResult result = new BatchResult();
         Connection conn = null;
         PreparedStatement pstmt = null;
         
         try {
             conn = DatabaseConnection.getConnection();
+            conn.setAutoCommit(false); // Start transaction
+            
+            String sql = "INSERT INTO students (student_id, full_name, birth_date, gender, address, phone, email, class_name, major, gpa) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, backupPath);
-            pstmt.execute();
-            return true;
+            
+            for (Student student : students) {
+                try {
+                    if (!existsById(student.getStudentId())) {
+                        pstmt.setString(1, student.getStudentId());
+                        pstmt.setString(2, student.getFullName());
+                        pstmt.setDate(3, student.getBirthDate() != null ? Date.valueOf(student.getBirthDate()) : null);
+                        pstmt.setString(4, student.getGender());
+                        pstmt.setString(5, student.getAddress());
+                        pstmt.setString(6, student.getPhone());
+                        pstmt.setString(7, student.getEmail());
+                        pstmt.setString(8, student.getClassName());
+                        pstmt.setString(9, student.getMajor());
+                        pstmt.setDouble(10, student.getGpa());
+                        
+                        pstmt.addBatch();
+                        result.processedCount++;
+                    } else {
+                        result.duplicateCount++;
+                    }
+                } catch (Exception e) {
+                    result.errors.add("Lỗi với SV " + student.getStudentId() + ": " + e.getMessage());
+                }
+            }
+            
+            int[] results = pstmt.executeBatch();
+            conn.commit();
+            
+            for (int i : results) {
+                if (i > 0) result.successCount++;
+            }
+            
         } catch (SQLException e) {
+            try {
+                if (conn != null) conn.rollback();
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+            result.errors.add("Lỗi batch insert: " + e.getMessage());
+        } finally {
+            try {
+                if (conn != null) conn.setAutoCommit(true);
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+            DatabaseConnection.closeAll(conn, pstmt, null);
+        }
+        
+        return result;
+    }
+    
+    // ===== Data Sync Methods =====
+    
+    public SyncResult syncWithCSV(String csvFilePath) {
+        SyncResult result = new SyncResult();
+        
+        try {
+            // Đọc dữ liệu từ CSV
+            ImportResult csvResult = importFromCSV(csvFilePath);
+            result.csvImported = csvResult.successCount;
+            result.csvErrors = csvResult.errors;
+            
+            // Đồng bộ với database
+            List<Student> dbStudents = findAll();
+            result.dbCount = dbStudents.size();
+            
+            result.totalAfterSync = count();
+            result.success = true;
+            
+        } catch (Exception e) {
+            result.success = false;
+            result.csvErrors.add("Lỗi đồng bộ: " + e.getMessage());
+        }
+        
+        return result;
+    }
+    
+    // ===== Backup/Restore cho SQL Server =====
+    
+    public boolean backupData(String backupPath) {
+        // Cho SQL Server, ta sẽ backup bằng cách export ra CSV thay vì database backup
+        try {
+            List<Student> allStudents = findAll();
+            return exportToCSV(backupPath.replace(".dat", ".csv"), allStudents);
+        } catch (Exception e) {
             System.err.println("Error creating backup: " + e.getMessage());
             return false;
-        } finally {
-            DatabaseConnection.closeAll(conn, pstmt, null);
         }
     }
     
     public boolean restoreData(String backupPath) {
-        System.out.println("Restore operation requires administrative privileges");
-        return false;
+        try {
+            ImportResult result = importFromCSV(backupPath);
+            return result.successCount > 0;
+        } catch (Exception e) {
+            System.err.println("Error restoring data: " + e.getMessage());
+            return false;
+        }
     }
     
-    // ===== Legacy methods for backward compatibility =====
+    // ===== Connection Test =====
+    
+    public boolean testConnection() {
+        return DatabaseConnection.testConnection();
+    }
+    
+    // ===== Result Classes cho NetBeans 8.2 =====
+    
+    public static class ImportResult {
+        public int successCount = 0;
+        public int failureCount = 0;
+        public int duplicateCount = 0;
+        public List<String> errors = new ArrayList<>();
+        
+        public int getTotalProcessed() {
+            return successCount + failureCount + duplicateCount;
+        }
+        
+        public boolean hasErrors() {
+            return !errors.isEmpty();
+        }
+        
+        public String getSummary() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("Kết quả nhập dữ liệu:\n");
+            sb.append("- Thành công: ").append(successCount).append("\n");
+            sb.append("- Thất bại: ").append(failureCount).append("\n");
+            sb.append("- Trùng lặp: ").append(duplicateCount).append("\n");
+            if (hasErrors()) {
+                sb.append("\nChi tiết lỗi:\n");
+                for (String error : errors) {
+                    sb.append("- ").append(error).append("\n");
+                }
+            }
+            return sb.toString();
+        }
+    }
+    
+    public static class BatchResult {
+        public int processedCount = 0;
+        public int successCount = 0;
+        public int duplicateCount = 0;
+        public List<String> errors = new ArrayList<>();
+        
+        public boolean isSuccess() {
+            return successCount > 0 && errors.isEmpty();
+        }
+    }
+    
+    public static class SyncResult {
+        public boolean success = false;
+        public int csvImported = 0;
+        public int dbCount = 0;
+        public long totalAfterSync = 0;
+        public List<String> csvErrors = new ArrayList<>();
+        
+        public String getSummary() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("Kết quả đồng bộ:\n");
+            sb.append("- Từ CSV: ").append(csvImported).append(" bản ghi\n");
+            sb.append("- Từ DB: ").append(dbCount).append(" bản ghi\n");
+            sb.append("- Tổng sau đồng bộ: ").append(totalAfterSync).append(" bản ghi\n");
+            if (!csvErrors.isEmpty()) {
+                sb.append("\nLỗi:\n");
+                for (String error : csvErrors) {
+                    sb.append("- ").append(error).append("\n");
+                }
+            }
+            return sb.toString();
+        }
+    }
+    
+    // ===== Data Validation =====
+    
+    public ValidationResult validateStudent(Student student) {
+        ValidationResult result = new ValidationResult();
+        
+        // Validate student ID
+        if (student.getStudentId() == null || student.getStudentId().trim().isEmpty()) {
+            result.addError("Mã sinh viên không được để trống");
+        } else if (!student.getStudentId().matches("^[A-Z0-9]{6,10}$")) {
+            result.addWarning("Mã sinh viên nên có 6-10 ký tự chữ và số");
+        }
+        
+        // Validate full name
+        if (student.getFullName() == null || student.getFullName().trim().isEmpty()) {
+            result.addError("Họ tên không được để trống");
+        } else if (student.getFullName().length() < 2) {
+            result.addError("Họ tên quá ngắn");
+        }
+        
+        // Validate birth date
+        if (student.getBirthDate() != null) {
+            LocalDate now = LocalDate.now();
+            LocalDate minDate = now.minusYears(100);
+            LocalDate maxDate = now.minusYears(16);
+            
+            if (student.getBirthDate().isBefore(minDate)) {
+                result.addError("Ngày sinh quá xa trong quá khứ");
+            } else if (student.getBirthDate().isAfter(maxDate)) {
+                result.addWarning("Sinh viên dưới 16 tuổi");
+            }
+        }
+        
+        // Validate phone
+        if (student.getPhone() != null && !student.getPhone().isEmpty()) {
+            if (!student.getPhone().matches("0\\d{9,10}")) {
+                result.addError("Số điện thoại không đúng định dạng");
+            }
+        }
+        
+        // Validate email
+        if (student.getEmail() != null && !student.getEmail().isEmpty()) {
+            if (!student.getEmail().matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+                result.addWarning("Email có thể không đúng định dạng");
+            }
+        }
+        
+        // Validate GPA
+        if (student.getGpa() < 0.0 || student.getGpa() > 4.0) {
+            result.addError("GPA phải từ 0.0 đến 4.0");
+        }
+        
+        return result;
+    }
+    
+    public static class ValidationResult {
+        private List<String> errors = new ArrayList<>();
+        private List<String> warnings = new ArrayList<>();
+        
+        public void addError(String error) {
+            errors.add(error);
+        }
+        
+        public void addWarning(String warning) {
+            warnings.add(warning);
+        }
+        
+        public boolean isValid() {
+            return errors.isEmpty();
+        }
+        
+        public boolean hasWarnings() {
+            return !warnings.isEmpty();
+        }
+        
+        public List<String> getErrors() {
+            return new ArrayList<>(errors);
+        }
+        
+        public List<String> getWarnings() {
+            return new ArrayList<>(warnings);
+        }
+        
+        public String getAllMessages() {
+            StringBuilder sb = new StringBuilder();
+            if (!errors.isEmpty()) {
+                sb.append("Lỗi:\n");
+                for (String error : errors) {
+                    sb.append("- ").append(error).append("\n");
+                }
+            }
+            if (!warnings.isEmpty()) {
+                if (sb.length() > 0) sb.append("\n");
+                sb.append("Cảnh báo:\n");
+                for (String warning : warnings) {
+                    sb.append("- ").append(warning).append("\n");
+                }
+            }
+            return sb.toString();
+        }
+    }
+    
+    // ===== Enhanced Data Source Management =====
+    
+    public DataSourceInfo getDataSourceInfo() {
+        DataSourceInfo info = new DataSourceInfo();
+        
+        try {
+            info.databaseConnected = testConnection();
+            if (info.databaseConnected) {
+                info.databaseRecordCount = count();
+            }
+        } catch (Exception e) {
+            info.databaseConnected = false;
+            info.databaseError = e.getMessage();
+        }
+        
+        return info;
+    }
+    
+    public static class DataSourceInfo {
+        public boolean databaseConnected = false;
+        public long databaseRecordCount = 0;
+        public String databaseError = null;
+        
+        public String getStatusSummary() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("Trạng thái kết nối:\n");
+            if (databaseConnected) {
+                sb.append("✅ Database: Đã kết nối (").append(databaseRecordCount).append(" bản ghi)\n");
+            } else {
+                sb.append("❌ Database: Chưa kết nối");
+                if (databaseError != null) {
+                    sb.append(" - ").append(databaseError);
+                }
+                sb.append("\n");
+            }
+            return sb.toString();
+        }
+    }
+    
+    // ===== Advanced Search với Filter =====
+    
+    public List<Student> advancedSearch(SearchCriteria criteria) {
+        StringBuilder sql = new StringBuilder("SELECT * FROM students WHERE 1=1");
+        List<Object> parameters = new ArrayList<>();
+        
+        if (criteria.studentId != null && !criteria.studentId.trim().isEmpty()) {
+            sql.append(" AND student_id LIKE ?");
+            parameters.add("%" + criteria.studentId.trim() + "%");
+        }
+        
+        if (criteria.fullName != null && !criteria.fullName.trim().isEmpty()) {
+            sql.append(" AND full_name LIKE ?");
+            parameters.add("%" + criteria.fullName.trim() + "%");
+        }
+        
+        if (criteria.className != null && !criteria.className.trim().isEmpty()) {
+            sql.append(" AND class_name LIKE ?");
+            parameters.add("%" + criteria.className.trim() + "%");
+        }
+        
+        if (criteria.major != null && !criteria.major.trim().isEmpty()) {
+            sql.append(" AND major LIKE ?");
+            parameters.add("%" + criteria.major.trim() + "%");
+        }
+        
+        if (criteria.gender != null && !criteria.gender.equals("Tất cả")) {
+            sql.append(" AND gender = ?");
+            parameters.add(criteria.gender);
+        }
+        
+        if (criteria.minGpa != null) {
+            sql.append(" AND gpa >= ?");
+            parameters.add(criteria.minGpa);
+        }
+        
+        if (criteria.maxGpa != null) {
+            sql.append(" AND gpa <= ?");
+            parameters.add(criteria.maxGpa);
+        }
+        
+        sql.append(" ORDER BY student_id");
+        
+        return executeSearchQuery(sql.toString(), parameters);
+    }
+    
+    private List<Student> executeSearchQuery(String sql, List<Object> parameters) {
+        List<Student> students = new ArrayList<>();
+        Connection conn = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+        
+        try {
+            conn = DatabaseConnection.getConnection();
+            pstmt = conn.prepareStatement(sql);
+            
+            for (int i = 0; i < parameters.size(); i++) {
+                Object param = parameters.get(i);
+                if (param instanceof String) {
+                    pstmt.setString(i + 1, (String) param);
+                } else if (param instanceof Double) {
+                    pstmt.setDouble(i + 1, (Double) param);
+                } else if (param instanceof Integer) {
+                    pstmt.setInt(i + 1, (Integer) param);
+                }
+            }
+            
+            rs = pstmt.executeQuery();
+            
+            while (rs.next()) {
+                students.add(mapResultSetToStudent(rs));
+            }
+            
+        } catch (SQLException e) {
+            System.err.println("Error executing search query: " + e.getMessage());
+        } finally {
+            DatabaseConnection.closeAll(conn, pstmt, rs);
+        }
+        
+        return students;
+    }
+    
+    public static class SearchCriteria {
+        public String studentId;
+        public String fullName;
+        public String className;
+        public String major;
+        public String gender;
+        public Double minGpa;
+        public Double maxGpa;
+        
+        public SearchCriteria() {}
+        
+        public boolean isEmpty() {
+            return (studentId == null || studentId.trim().isEmpty()) &&
+                   (fullName == null || fullName.trim().isEmpty()) &&
+                   (className == null || className.trim().isEmpty()) &&
+                   (major == null || major.trim().isEmpty()) &&
+                   (gender == null || "Tất cả".equals(gender)) &&
+                   minGpa == null && maxGpa == null;
+        }
+    }
+    
+    // ===== Legacy Methods cho backward compatibility =====
     
     public boolean addStudent(Student student) {
         return save(student);
@@ -709,5 +1155,12 @@ public class StudentDAO implements StudentRepository {
             System.err.println("✗ Database connection failed!");
             DatabaseConnection.printConfiguration();
         }
+    }
+    
+    // ===== Cleanup =====
+    
+    public void shutdown() {
+        // Cleanup resources if needed
+        System.out.println("StudentDAO shutdown completed.");
     }
 }
